@@ -3,6 +3,13 @@ import pandas as pd
 import random
 import math
 
+cov_rad = {
+    'Ga': 1.22,
+    'Al': 1.21,
+    'In': 1.42,
+    'O' : 0.66
+}
+
 class Vector(object):
     def __init__(self, x: float, y: float, z: float):
         self.x = x
@@ -24,49 +31,51 @@ class Vector(object):
                       self.y - other.y,
                       self.z - other.z)
 
+    def free_translate(self, x, y, z): # translate the atoms, not frame of reference
+        return Vector(self.x + x, self.y + y, self.z + z)
+
     def translate(self, dist, axis: int):
-        assert(axis >= 1 and axis <= 3)
+        assert(1 <= axis <= 3)
         if axis == 1:
-            return self.translate_x(dist)
+            return self.free_translate(dist, 0, 0)
         elif axis == 2:
-            return self.translate_y(dist)
+            return self.free_translate(0, dist, 0)
         elif axis == 3:
-            return self.translate_z(dist)
+            return self.free_translate(0, 0, dist)
 
     def translate_x(self, dist):
-        return Vector(self.x + dist, self.y, self.z)
+        return self.translate(dist, 1)
 
     def translate_y(self, dist):
-        return Vector(self.x, self.y + dist, self.z)
+        return self.translate(dist, 2)
 
     def translate_z(self, dist):
-        return Vector(self.x, self.y, self.z + dist)
+        return self.translate(dist, 3)
+
+    def free_rotate(self, theta_x, theta_y, theta_z):
+        new_x, new_y, new_z = self.x, self.y, self.z
+        # x-rotation
+        new_y2 = math.cos(theta_x) * new_y - math.sin(theta_x) * new_z
+        new_z2 = math.sin(theta_x) * new_y + math.cos(theta_x) * new_z
+        new_y, new_z = new_y2, new_z2
+        # y-rotation
+        new_x2 = math.cos(theta_y) * new_x + math.sin(theta_y) * new_z
+        new_z2 = -math.sin(theta_y) * new_x + math.cos(theta_y) * new_z
+        new_x, new_z = new_x2, new_z2
+        # z-rotation
+        new_x2 = math.cos(theta_z) * new_x - math.sin(theta_z) * new_y
+        new_y2 = math.sin(theta_z) * new_x + math.cos(theta_z) * new_y
+        new_x, new_y = new_x2, new_y2
+        return Vector(new_x, new_y, new_z)
 
     def rotate(self, angle, axis: int):
-        assert(axis >= 1 and axis <= 3)
-        axis_dict = {
-            1: self.x,
-            2: self.y,
-            3: self.z,
-            4: self.x,
-            5: self.y
-        }
-        """
-        essentially the component along the axis is unchange while the other two are changed by the 2D rotation matrix
-        we now define the rotation in 2D with c1 and c2
-        """
-        c1 = axis_dict[axis + 1]
-        c2 = axis_dict[axis + 2]
-
-        new_c1 = math.cos(angle) * c1 - math.sin(angle) * c2
-        new_c2 = math.sin(angle) * c1 + math.cos(angle) * c2
-
+        assert(1 <= axis <= 3)
         if axis == 1:
-            return Vector(self.x, new_c1, new_c2)
+            return self.free_rotate(angle, 0, 0)
         elif axis == 2:
-            return Vector(new_c2, self.y, new_c1)
+            return self.free_rotate(0, angle, 0)
         else:
-            return Vector(new_c1, new_c2, self.z)
+            return self.free_rotate(0, 0, angle)
 
     def rotate_x(self, angle):
         return self.rotate(angle, 1)
@@ -108,15 +117,22 @@ class UnitCell(object):
                 all_coords += list(map(lambda v: v.to_numpy(), coords))
         return atoms, np.asarray(all_coords)
 
-    def rotate(self, angle, axis: int):
-        assert(axis >= 1 and axis <= 3)
-        uc = UnitCell(self.lattice1.rotate(angle, axis),
-                      self.lattice2.rotate(angle, axis),
-                      self.lattice3.rotate(angle, axis))
+    def free_rotate(self, theta_x, theta_y, theta_z):
+        uc = UnitCell(self.lattice1.free_rotate(theta_x, theta_y, theta_z),
+                      self.lattice2.free_rotate(theta_x, theta_y, theta_z),
+                      self.lattice3.free_rotate(theta_x, theta_y, theta_z))
         for atom, coords in self.atoms.items():
-            uc.atoms[atom] = list(map(lambda v: v.rotate(angle, axis), coords))
-
+            uc.atoms[atom] = list(map(lambda v: v.free_rotate(theta_x, theta_y, theta_z), coords))
         return uc
+
+    def rotate(self, angle, axis: int):
+        assert(1 <= axis <= 3)
+        if axis == 1:
+            return self.free_rotate(angle, 0, 0)
+        elif axis == 2:
+            return self.free_rotate(0, angle, 0)
+        else:
+            return self.free_rotate(0, 0, angle)
 
     def rotate_x(self, angle):
         return self.rotate(angle, 1)
@@ -127,24 +143,27 @@ class UnitCell(object):
     def rotate_z(self, angle):
         return self.rotate(angle, 3)
 
-    def translate(self, dist, axis):
+    def free_translate(self, x, y, z):
         uc = UnitCell(self.lattice1,
                       self.lattice2,
                       self.lattice3)
-
         for atom, coords in self.atoms.items():
-            uc.atoms[atom] = list(map(lambda v: v.translate(dist, axis), coords))
+            uc.atoms[atom] = list(map(lambda v: v.free_translate(x, y, z), coords))
         return uc
 
-    def __str__(self):
-        lattice_vecs = pd.DataFrame(numpy.asarray([self.lattice1.to_numpy(), self.lattice2.to_numpy(), self.lattice3.to_numpy()]))
-        lattice_vecs.index = ['lv1', 'lv2', 'lv3']
-        lattice_vecs.columns = ['x', 'y', 'z']
+    def translate(self, dist, axis):
+        assert(1 <= axis <= 3)
+        if axis == 1:
+            return self.free_translate(dist, 0, 0)
+        elif axis == 2:
+            return self.free_translate(0, dist, 0)
+        else:
+            return self.free_translate(0, 0, dist)
 
+    def __str__(self):
+        lattice_vecs = pd.DataFrame(np.asarray([self.lattice1.to_numpy(), self.lattice2.to_numpy(), self.lattice3.to_numpy()]), index=['lv1', 'lv2', 'lv3'], columns=['x', 'y', 'z'])
         a, c = self.to_numpy()
-        atoms = pd.DataFrame(c)
-        atoms.index = a
-        atoms.columns = ['x', 'y', 'z']
+        atoms = pd.DataFrame(c, index=a, columns=['x', 'y', 'z'])
 
         return '{}\n\n{}'.format(str(lattice_vecs), str(atoms))
 
@@ -167,6 +186,16 @@ class SuperCell(object):
         self.y_tran = y_tran
         self.z_tran = z_tran
 
+    def free_rotate(self, theta_x, theta_y, theta_z):
+        return SuperCell(self.unit_cell.free_rotate(theta_x, theta_y, theta_z),
+                         x_rot=theta_x+self.x_rot, y_rot=theta_y+self.y_rot, z_rot=theta_z+self.z_rot,
+                         x_tran=self.x_tran, y_tran=self.y_tran, z_tran=self.z_tran)
+
+    def free_translate(self, x, y, z):
+        return SuperCell(self.unit_cell.free_translate(x, y, z),
+                         x_tran=x+self.x_tran, y_tran=y+self.y_tran, z_tran=z+self.z_tran,
+                         x_rot=self.x_rot, y_rot=self.y_rot, z_rot=self.z_rot)
+
     def rotate(self, angle, axis):
         return SuperCell(self.unit_cell.rotate(angle, axis))
 
@@ -183,17 +212,29 @@ class SuperCell(object):
         x_max, y_max, z_max = max(self.unit_cell.lattice1.x, self.unit_cell.lattice2.x, self.unit_cell.lattice3.x),\
             max(self.unit_cell.lattice1.y, self.unit_cell.lattice2.y, self.unit_cell.lattice3.y),\
             max(self.unit_cell.lattice1.z, self.unit_cell.lattice2.z, self.unit_cell.lattice3.z),
-        x_tran, y_tran, z_tran = x_max / 2, y_max / 2, z_max / 2
-        return SuperCell(self.unit_cell.rotate_x(x_rot).rotate_y(y_rot).rotate_z(z_rot)
-                         .translate(x_tran, 1).translate(y_tran, 2).translate(z_tran, 3),
-                         x_rot=x_rot, y_rot=y_rot, z_rot=z_rot,
-                         x_tran=x_tran, y_tran=y_tran, z_tran=z_tran)
+        x_tran, y_tran, z_tran = x_max / 2 * random.random(), y_max / 2 * random.random(), z_max / 2 * random.random()
+        return self.free_rotate(x_rot, y_rot, z_rot).free_translate(x_tran, y_tran, z_tran)
 
     def make_supercell(self, atom):
-        return self.unit_cell.to_numpy(atom)
+        supercell = None
+        x,y,z = self.repetitions()
+        _, primary_cell = self.unit_cell.to_numpy(atom)
+        lv1 = self.unit_cell.lattice1.to_numpy()
+        lv2 = self.unit_cell.lattice2.to_numpy()
+        lv3 = self.unit_cell.lattice3.to_numpy()
+        for i in range(-x, x):
+            for j in range(-y, y):
+                for k in range(-z, z):
+                    subcell = primary_cell + i * lv1 + j * lv2 + k * lv3
+                    if supercell is None:
+                        supercell = subcell
+                    else:
+                        supercell = np.concatenate((supercell, subcell))
+        return supercell
 
-    def to_tensor(self, cell_size=12.0, fineness=2.0,
-                  gamma_in=1.0, gamma_ga=1.0, gamma_al=1.0, gamma_o=1.0,
+    def to_tensor(self, cell_size=12.0, fineness=2,
+                  gamma_in=cov_rad['In'], gamma_ga=cov_rad['Ga'],
+                  gamma_al=cov_rad['Al'], gamma_o=cov_rad['O'],
                   f=lambda r, gamma: np.exp(-gamma*np.linalg.norm(r, axis=1))):
         atom_map = {
             "In": 0,
@@ -207,23 +248,29 @@ class SuperCell(object):
             "Al": gamma_al,
             "O": gamma_o
         }
-        N = 2 * int(cell_size / fineness) + 1
-        discr = np.linspace(-cell_size, cell_size, N)
+        n = 2 * int(cell_size / fineness) + 1
+        discr = np.linspace(-cell_size, cell_size, n)
         X, Y, Z = np.meshgrid(discr, discr, discr)
-        out_tensor = np.zeros((N, N, N, 4), dtype=np.float32)
+        out_tensor = np.zeros((n, n, n, 4), dtype=np.float32)
 
         supercells = {
             k: self.make_supercell(k) for k in self.unit_cell.atoms.keys()
         }
 
-        for i in range(N):
-            for j in range(N):
-                for k in range(N):
+        for i in range(n):
+            for j in range(n):
+                for k in range(n):
                     xyz = np.asarray([X[i,j,k], Y[i,j,k], Z[i,j,k]])
                     for a, sc in supercells.items():
-                        v = f(sc[1] - xyz, gamma_map[a]).sum()
+                        v = f(sc - xyz, gamma_map[a]).sum()
                         out_tensor[i,j,k, atom_map[a]] = v
         return out_tensor
+
+    def __str__(self):
+        df = pd.DataFrame([[self.x_rot, self.y_rot, self.z_rot],
+                           [self.x_tran, self.y_tran, self.z_tran]],
+                          index=['rot', 'tran'], columns=['x', 'y', 'z'])
+        return '{}\n\n{}'.format(str(df), str(self.unit_cell))
 
 
 
@@ -241,19 +288,7 @@ def read_file(filename):
     return unit_cell
 
 if __name__ == '__main__':
-    cell = read_file('train/1/geometry.xyz')
+    cell = read_file('train/985/geometry.xyz')
     supercell = SuperCell(cell)
-    import time
-    start = time.time()
-    supercell.to_tensor()
-    duration = time.time() - start
-    print('took time: {}'.format(duration))
-    start = time.time()
-    supercell.to_tensor(fineness=1.5)
-    duration = time.time() - start
-    print('took time: {}'.format(duration))
-    start = time.time()
-    supercell.to_tensor(fineness=1.0)
-    duration = time.time() - start
-    print('took time: {}'.format(duration))
+    np.savetxt('sc',supercell.make_supercell('Ga'))
 
