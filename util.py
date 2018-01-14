@@ -232,6 +232,33 @@ class SuperCell(object):
                         supercell = np.concatenate((supercell, subcell))
         return supercell
 
+    def to_tensor2(self, cell_size=12.0, fineness=1.5):
+        atom_map = {
+            "In": 0,
+            "Ga": 1,
+            "Al": 2,
+            "O": 3
+        }
+
+        n = 2 * int(cell_size/fineness) + 1
+        discr = np.linspace(-cell_size, cell_size, n)
+        X, Y, Z = np.meshgrid(discr, discr, discr)
+
+        out_tensor = np.zeros((n,n,n,4), dtype=np.float32)
+
+        supercells = {
+            k: self.make_supercell(k) for k in self.unit_cell.atoms.keys()
+        }
+
+        for k, sc in supercells.items():
+            coord = (sc / fineness).astype(np.int)
+            for c in coord:
+                x, y, z = c
+                if np.abs(x) <= int(n/2) and np.abs(y) <= int(n/2) and np.abs(z) <=int(n/2):
+                    out_tensor[x, y, z, atom_map[k]] += 1.0
+
+        return out_tensor
+
     def to_tensor(self, cell_size=12.0, fineness=2,
                   gamma_in=cov_rad['In'], gamma_ga=cov_rad['Ga'],
                   gamma_al=cov_rad['Al'], gamma_o=cov_rad['O'],
@@ -287,8 +314,22 @@ def read_file(filename):
         unit_cell.add_atom(a.strip(), Vector(float(x), float(y), float(z)))
     return unit_cell
 
+def super_cell(filename):
+    return SuperCell(read_file(filename))
+
 if __name__ == '__main__':
-    cell = read_file('train/985/geometry.xyz')
+    cell = read_file('train/1/geometry.xyz')
     supercell = SuperCell(cell)
-    np.savetxt('sc',supercell.make_supercell('Ga'))
+    import time
+    start = time.time()
+    ten = supercell.to_tensor2(fineness=1.5)
+    dur = time.time() - start
+    print(dur)
+    print(np.sum(ten))
+    print(np.max(ten))
+    print(ten.shape)
+    import matplotlib.pyplot as plt
+    plt.imshow(ten[:,:,0,1])
+    plt.show()
+    print(ten[:,:,0,1])
 
