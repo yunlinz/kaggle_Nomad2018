@@ -208,7 +208,9 @@ class SuperCell(object):
                 int(25.0 / self.unit_cell.lattice3.length()) + 1)
 
     def random_transform(self):
-        x_rot, y_rot, z_rot = math.pi / 2 * random.random(), math.pi / 2 * random.random(), math.pi / 2 * random.random()
+        x_rot, y_rot, z_rot = np.random.randint(2) * math.pi, \
+                              np.random.randint(2) * math.pi, \
+                              np.random.randint(2) * math.pi
         x_max, y_max, z_max = max(self.unit_cell.lattice1.x, self.unit_cell.lattice2.x, self.unit_cell.lattice3.x),\
             max(self.unit_cell.lattice1.y, self.unit_cell.lattice2.y, self.unit_cell.lattice3.y),\
             max(self.unit_cell.lattice1.z, self.unit_cell.lattice2.z, self.unit_cell.lattice3.z),
@@ -241,8 +243,6 @@ class SuperCell(object):
         }
 
         n = 2 * int(cell_size/fineness) + 1
-        discr = np.linspace(-cell_size, cell_size, n)
-        X, Y, Z = np.meshgrid(discr, discr, discr)
 
         out_tensor = np.zeros((n,n,n,4), dtype=np.float32)
 

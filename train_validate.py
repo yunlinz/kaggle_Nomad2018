@@ -15,11 +15,9 @@ def create_single_dataset(kind):
             X = np.concatenate((X, t))
     np.save('preprocess/{}/tensor3'.format(kind), X)
     print(X.shape)
-    if not kind == "test":
-        y = df[['formation_energy_ev_natom', 'bandgap_energy_ev']].values
-        y = np.repeat(y, 11, axis=0)
-        np.save('preprocess/{}/target'.format(kind), y)
+    y = df[['formation_energy_ev_natom', 'bandgap_energy_ev']].values
+    y = np.repeat(y, 11, axis=0)
+    np.save('preprocess/{}/target'.format(kind), y)
 
 if __name__ == '__main__':
-    create_single_dataset('train')
-    create_single_dataset('validate')
+    create_single_dataset('test')
