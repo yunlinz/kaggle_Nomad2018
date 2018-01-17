@@ -211,11 +211,11 @@ class SuperCell(object):
         x_rot, y_rot, z_rot = np.random.randint(2) * math.pi, \
                               np.random.randint(2) * math.pi, \
                               np.random.randint(2) * math.pi
-        x_max, y_max, z_max = max(self.unit_cell.lattice1.x, self.unit_cell.lattice2.x, self.unit_cell.lattice3.x),\
-            max(self.unit_cell.lattice1.y, self.unit_cell.lattice2.y, self.unit_cell.lattice3.y),\
-            max(self.unit_cell.lattice1.z, self.unit_cell.lattice2.z, self.unit_cell.lattice3.z),
+        x_max, y_max, z_max = min(self.unit_cell.lattice1.x, self.unit_cell.lattice2.x, self.unit_cell.lattice3.x),\
+            min(self.unit_cell.lattice1.y, self.unit_cell.lattice2.y, self.unit_cell.lattice3.y),\
+            min(self.unit_cell.lattice1.z, self.unit_cell.lattice2.z, self.unit_cell.lattice3.z),
         x_tran, y_tran, z_tran = x_max / 2 * random.random(), y_max / 2 * random.random(), z_max / 2 * random.random()
-        return self.free_rotate(x_rot, y_rot, z_rot).free_translate(x_tran, y_tran, z_tran)
+        return self.free_translate(x_tran, y_tran, z_tran)
 
     def make_supercell(self, atom):
         supercell = None
