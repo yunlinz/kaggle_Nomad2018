@@ -1,12 +1,42 @@
 import keras as K
 import numpy as np
-from keras.models import Sequential
-from keras.layers import Convolution3D, Flatten, MaxPooling3D, Dense, ZeroPadding3D, Dropout, BatchNormalization
+from keras.models import Sequential, Model
+from keras.layers import Convolution3D, Flatten, MaxPooling3D, Dense, Input, concatenate
 from keras.callbacks import ModelCheckpoint
 
-from keras.optimizers import Adam, SGD, RMSprop, Nadam
+from keras.optimizers import Nadam
 import tensorflow as tf
 import os
+
+
+def create_graph2(cell_size=27, load_file=None, l2_lambda=0.00013):
+    cell_input = Input((cell_size, cell_size, cell_size, 4), dtype='float32', name='crystall_cell')
+    x = Convolution3D(8, (7,7,7), input_shape=(cell_size,cell_size,cell_size, 4), activation='relu', kernel_regularizer=K.regularizers.l2(l2_lambda))(cell_input)
+    x = Convolution3D(16, (5,5,5), activation='relu', kernel_regularizer=K.regularizers.l2(l2_lambda))(x)
+    x = Convolution3D(32, (5,5,5), activation='relu', kernel_regularizer=K.regularizers.l2(l2_lambda))(x)
+    x = Convolution3D(64, (5,5,5), activation='relu', kernel_regularizer=K.regularizers.l2(l2_lambda))(x)
+    x = Convolution3D(128, (5,5,5), activation='relu', kernel_regularizer=K.regularizers.l2(l2_lambda))(x)
+    x = MaxPooling3D((2,2,2), strides=(2,2,2))(x)
+    x = Flatten()(x)
+    x = Dense(512, activation='relu', kernel_regularizer=K.regularizers.l2(l2_lambda))(x)
+    x = Dense(256, activation='relu', kernel_regularizer=K.regularizers.l2(l2_lambda))(x)
+    x = Dense(128, activation='relu', kernel_regularizer=K.regularizers.l2(l2_lambda))(x)
+    x = Dense(64, activation='relu', kernel_regularizer=K.regularizers.l2(l2_lambda))(x)
+    x = Dense(32, activation='relu', kernel_regularizer=K.regularizers.l2(l2_lambda))(x)
+
+    aux_input = Input((16,), name='aux_input')
+    x = concatenate([x, aux_input])
+    x = Dense(8, activation='relu', kernel_regularizer=K.regularizers.l2(l2_lambda))(x)
+    output = Dense(2, activation='relu', kernel_regularizer=K.regularizers.l2(l2_lambda))(x)
+    model = Model(inputs=[cell_input, aux_input], outputs=[output])
+
+    if load_file is not None:
+        model.load_weights(load_file)
+
+    optim = Nadam()
+    model.compile(optimizer=optim, loss=rmsle)
+
+    return model
 
 def create_graph(cell_size=27, load_file=None, l2_lambda=0.01):
     model = Sequential()
@@ -27,19 +57,15 @@ def create_graph(cell_size=27, load_file=None, l2_lambda=0.01):
 
     if load_file is not None:
         model.load_weights(load_file)
-
+    optim = Nadam()
+    model.compile(optimizer=optim, loss=rmsle)
     return model
 
 def rmsle(actual, model):
     return tf.reduce_mean(tf.sqrt(tf.reduce_mean(tf.square(tf.log(model + 1) - tf.log(actual + 1)), axis=0)))
 
 def train(continue_from=None, snapshot_freq=None, version="0.1", callbacks=None, epochs=10, l2_lambda=0.00013):
-    optim = Nadam()
-    if continue_from is not None:
-        model = create_graph(load_file=continue_from, l2_lambda=l2_lambda)
-    else:
-        model = create_graph(l2_lambda=l2_lambda)
-    model.compile(optimizer=optim, loss=rmsle)
+    create_graph(load_file=continue_from, l2_lambda=l2_lambda)
 
     train_X = np.concatenate((np.load('preprocess/train/tensor2.npy'), np.load('preprocess/validate/tensor2.npy')))
     train_y = np.concatenate((np.load('preprocess/train/target.npy'), np.load('preprocess/validate/target.npy')))
