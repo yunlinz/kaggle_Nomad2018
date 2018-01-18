@@ -1,29 +1,29 @@
 import keras as K
 import numpy as np
 from keras.models import Sequential
-from keras.layers import Convolution3D, Flatten, MaxPooling3D, Dense, ZeroPadding3D, Dropout
+from keras.layers import Convolution3D, Flatten, MaxPooling3D, Dense, ZeroPadding3D, Dropout, BatchNormalization
 from keras.callbacks import ModelCheckpoint
 
 from keras.optimizers import Adam, SGD, RMSprop, Nadam
 import tensorflow as tf
 import os
 
-def create_graph(cell_size=27, load_file=None):
+def create_graph(cell_size=27, load_file=None, l2_lambda=0.01):
     model = Sequential()
-    model.add(Convolution3D(8, (7,7,7), input_shape=(cell_size,cell_size,cell_size, 4), activation='relu'))
-    model.add(Convolution3D(16, (5,5,5), activation='relu'))
-    model.add(Convolution3D(32, (5,5,5), activation='relu'))
-    model.add(Convolution3D(64, (5,5,5), activation='relu'))
-    model.add(Convolution3D(128, (5,5,5), activation='relu'))
+    model.add(Convolution3D(8, (7,7,7), input_shape=(cell_size,cell_size,cell_size, 4), activation='relu', kernel_regularizer=K.regularizers.l2(l2_lambda)))
+    model.add(Convolution3D(16, (5,5,5), activation='relu', kernel_regularizer=K.regularizers.l2(l2_lambda)))
+    model.add(Convolution3D(32, (5,5,5), activation='relu', kernel_regularizer=K.regularizers.l2(l2_lambda)))
+    model.add(Convolution3D(64, (5,5,5), activation='relu', kernel_regularizer=K.regularizers.l2(l2_lambda)))
+    model.add(Convolution3D(128, (5,5,5), activation='relu', kernel_regularizer=K.regularizers.l2(l2_lambda)))
     model.add(MaxPooling3D((2,2,2), strides=(2,2,2)))
     model.add(Flatten())
 
-    model.add(Dense(512, activation='relu'))
-    model.add(Dense(256, activation='relu'))
-    model.add(Dense(128, activation='relu'))
-    model.add(Dense(64, activation='relu'))
-    model.add(Dense(32, activation='relu'))
-    model.add(Dense(2, activation='relu'))
+    model.add(Dense(512, activation='relu', kernel_regularizer=K.regularizers.l2(l2_lambda)))
+    model.add(Dense(256, activation='relu', kernel_regularizer=K.regularizers.l2(l2_lambda)))
+    model.add(Dense(128, activation='relu', kernel_regularizer=K.regularizers.l2(l2_lambda)))
+    model.add(Dense(64, activation='relu', kernel_regularizer=K.regularizers.l2(l2_lambda)))
+    model.add(Dense(32, activation='relu', kernel_regularizer=K.regularizers.l2(l2_lambda)))
+    model.add(Dense(2, activation='relu', kernel_regularizer=K.regularizers.l2(l2_lambda)))
 
     if load_file is not None:
         model.load_weights(load_file)
@@ -33,12 +33,12 @@ def create_graph(cell_size=27, load_file=None):
 def rmsle(actual, model):
     return tf.reduce_mean(tf.sqrt(tf.reduce_mean(tf.square(tf.log(model + 1) - tf.log(actual + 1)), axis=0)))
 
-def train(continue_from=None, snapshot_freq=None, version="0.1", callbacks=None):
+def train(continue_from=None, snapshot_freq=None, version="0.1", callbacks=None, epochs=10, l2_lambda=0.00013):
     optim = Nadam()
     if continue_from is not None:
-        model = create_graph(load_file=continue_from)
+        model = create_graph(load_file=continue_from, l2_lambda=l2_lambda)
     else:
-        model = create_graph()
+        model = create_graph(l2_lambda=l2_lambda)
     model.compile(optimizer=optim, loss=rmsle)
 
     train_X = np.concatenate((np.load('preprocess/train/tensor2.npy'), np.load('preprocess/validate/tensor2.npy')))
@@ -48,7 +48,7 @@ def train(continue_from=None, snapshot_freq=None, version="0.1", callbacks=None)
     validate_y = np.load('preprocess/test/target.npy')
 
     model.fit(train_X, train_y, validation_data=(validate_X, validate_y),
-              shuffle=True, callbacks=callbacks, verbose=1, epochs=30, batch_size=64)
+              shuffle=True, callbacks=callbacks, verbose=1, epochs=epochs, batch_size=64)
 
     if not os.path.exists('models/{}'.format(version)):
         os.mkdir('models')
@@ -59,10 +59,12 @@ def train(continue_from=None, snapshot_freq=None, version="0.1", callbacks=None)
     return model
 
 if __name__ == '__main__':
-
-    filepath = 'models/0.3/model_weights_{epoch:03d}.h5'
+    version = "0.4c"
+    if not os.path.exists('models/' + version):
+        os.mkdir('models/' + version)
+    filepath = 'models/' + version + '/model_weights_{epoch:03d}.h5'
     chechpoint = ModelCheckpoint(filepath, 'val_loss', verbose=1, save_best_only=True)
-    model = train(callbacks=[chechpoint], version="0.3")
+    model = train(callbacks=[chechpoint], version=version, epochs=20)
 
     validate_X = np.load('preprocess/test/tensor2.npy')
     validate_y = np.load('preprocess/test/target.npy')
@@ -73,5 +75,5 @@ if __name__ == '__main__':
     df['fe_model'] = pred_y[:,0]
     df['bg_model'] = pred_y[:,1]
 
-    df.to_csv('models/0.3/20_epoch_results.csv')
+    df.to_csv('models/' + version +'/20_epoch_results.csv')
 

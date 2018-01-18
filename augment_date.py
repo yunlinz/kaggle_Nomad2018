@@ -27,9 +27,9 @@ def augment_data2(filename, repeats=10, fineness=1):
     return t0
 
 def mk_aug_data(f):
-    tensor = augment_data2('train/{}/geometry.xyz'.format(f))
-    np.save('train/{}/tensor_aug2'.format(f), tensor)
+    tensor = augment_data2('test/{}/geometry.xyz'.format(f))
+    np.save('test/{}/tensor_aug2'.format(f), tensor)
 
 if __name__ == '__main__':
     pool = multiprocessing.Pool(7)
-    pool.map(mk_aug_data, os.listdir('train'))
+    pool.map(mk_aug_data, os.listdir('test'))
