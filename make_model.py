@@ -10,7 +10,7 @@ import tensorflow as tf
 import os
 
 
-def create_graph2(cell_size=27, load_file=None, l2_lambda=0.00013, leakage=0):
+def create_graph2(cell_size=27, load_file=None, l2_lambda=0.0, leakage=0.01):
     initializer = TruncatedNormal(0, 0.01)
     cell_input = Input((cell_size, cell_size, cell_size, 4), dtype='float32', name='crystall_cell')
     x = Convolution3D(8, (7,7,7), input_shape=(cell_size,cell_size,cell_size, 4),
