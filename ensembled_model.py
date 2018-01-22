@@ -8,7 +8,7 @@ import pickle
 from make_model import *
 
 
-def make_submodel(outdir, test_data=None, epochs=25):
+def make_submodel(outdir, test_data=None, epochs=25, dropout=0.3):
     if not os.path.exists(outdir):
         os.mkdir(outdir)
 
@@ -27,7 +27,7 @@ def make_submodel(outdir, test_data=None, epochs=25):
 
     joblib.dump(ohe, outdir + '/ohe.pkl')
 
-    model = create_graph2(27, None, 0.0, 0.0)
+    model = create_graph2(27, None, 0.001, 0.01, dropout)
     model.fit([inp, aux], train_target,
               validation_data=([valid_inp, valid_aux], valid_target),
               batch_size=64, shuffle=True, epochs=epochs)
@@ -99,7 +99,7 @@ def make_input_output(df, model, isTest=False):
 
 if __name__ == '__main__':
     name = "v0.9"
-    submodels = 2
+    submodels = 10
 
     outdir = 'output/' + name
     if not os.path.exists(outdir):
@@ -108,6 +108,7 @@ if __name__ == '__main__':
         if not os.path.exists(outdir + '/{}'.format(str(i))):
             os.mkdir(outdir + '/{}'.format(str(i)))
 
-    for i in range(1, submodels):
+    for i in range(1, submodels + 1):
         print('submodel: {}'.format(i))
-        make_submodel(outdir + '/' + str(i), epochs=15)
+        dropout = 0.0
+        make_submodel(outdir + '/' + str(i), dropout=dropout)

@@ -1,7 +1,7 @@
 import keras as K
 import numpy as np
 from keras.models import Sequential, Model
-from keras.layers import Convolution3D, Flatten, MaxPooling3D, Dense, Input, concatenate, LeakyReLU
+from keras.layers import Convolution3D, Flatten, MaxPooling3D, Dense, Input, concatenate, LeakyReLU, Dropout
 from keras.callbacks import ModelCheckpoint
 from keras.initializers import RandomUniform, TruncatedNormal
 
@@ -10,36 +10,22 @@ import tensorflow as tf
 import os
 
 
-def create_graph2(cell_size=27, load_file=None, l2_lambda=0.0, leakage=0.01):
+def create_graph2(cell_size=27, load_file=None, l2_lambda=0.0, leakage=0.01, dropout=0.3):
     initializer = TruncatedNormal(0, 0.01)
     cell_input = Input((cell_size, cell_size, cell_size, 4), dtype='float32', name='crystall_cell')
-    x = Convolution3D(8, (7,7,7), input_shape=(cell_size,cell_size,cell_size, 4),
+    x = Convolution3D(2, (9,9,9), input_shape=(cell_size,cell_size,cell_size, 4),
                       activation='relu', kernel_regularizer=K.regularizers.l2(l2_lambda))(cell_input)
     x = LeakyReLU(leakage)(x)
-    x = Convolution3D(16, (5,5,5), kernel_regularizer=K.regularizers.l2(l2_lambda), kernel_initializer=initializer)(x)
+    x = Convolution3D(2, (9,9,9), kernel_regularizer=K.regularizers.l2(l2_lambda), kernel_initializer=initializer)(x)
+    x = Dropout(dropout)(x)
     x = LeakyReLU(leakage)(x)
-    x = Convolution3D(32, (5,5,5), kernel_regularizer=K.regularizers.l2(l2_lambda), kernel_initializer=initializer)(x)
+    x = Convolution3D(2, (9,9,9), kernel_regularizer=K.regularizers.l2(l2_lambda), kernel_initializer=initializer)(x)
+    x = Dropout(dropout)(x)
     x = LeakyReLU(leakage)(x)
-    x = Convolution3D(64, (5,5,5), kernel_regularizer=K.regularizers.l2(l2_lambda), kernel_initializer=initializer)(x)
-    x = LeakyReLU(leakage)(x)
-    x = Convolution3D(128, (5,5,5), kernel_regularizer=K.regularizers.l2(l2_lambda), kernel_initializer=initializer)(x)
-    x = LeakyReLU(leakage)(x)
-    x = MaxPooling3D((2,2,2), strides=(2,2,2))(x)
     x = Flatten()(x)
-    x = Dense(512, kernel_regularizer=K.regularizers.l2(l2_lambda), kernel_initializer=initializer)(x)
-    x = LeakyReLU(leakage)(x)
-    x = Dense(256, kernel_regularizer=K.regularizers.l2(l2_lambda), kernel_initializer=initializer)(x)
-    x = LeakyReLU(leakage)(x)
-    x = Dense(128, kernel_regularizer=K.regularizers.l2(l2_lambda), kernel_initializer=initializer)(x)
-    x = LeakyReLU(leakage)(x)
-    x = Dense(64, kernel_regularizer=K.regularizers.l2(l2_lambda), kernel_initializer=initializer)(x)
-    x = LeakyReLU(leakage)(x)
-    x = Dense(32, kernel_regularizer=K.regularizers.l2(l2_lambda), kernel_initializer=initializer)(x)
-
     aux_input = Input((16,), name='aux_input')
     x = concatenate([x, aux_input])
-    x = Dense(8, kernel_regularizer=K.regularizers.l2(l2_lambda), kernel_initializer=initializer)(x)
-    x = LeakyReLU(leakage)(x)
+    x = Dropout(dropout)(x)
     output = Dense(2, activation='relu', kernel_regularizer=K.regularizers.l2(l2_lambda), kernel_initializer=initializer)(x)
     model = Model(inputs=[cell_input, aux_input], outputs=[output])
 
