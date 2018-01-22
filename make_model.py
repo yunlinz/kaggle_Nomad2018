@@ -13,13 +13,13 @@ import os
 def create_graph2(cell_size=27, load_file=None, l2_lambda=0.0, leakage=0.01, dropout=0.3):
     initializer = TruncatedNormal(0, 0.01)
     cell_input = Input((cell_size, cell_size, cell_size, 4), dtype='float32', name='crystall_cell')
-    x = Convolution3D(2, (9,9,9), input_shape=(cell_size,cell_size,cell_size, 4),
+    x = Convolution3D(6, (9,9,9), input_shape=(cell_size,cell_size,cell_size, 4),
                       activation='relu', kernel_regularizer=K.regularizers.l2(l2_lambda))(cell_input)
     x = LeakyReLU(leakage)(x)
-    x = Convolution3D(2, (9,9,9), kernel_regularizer=K.regularizers.l2(l2_lambda), kernel_initializer=initializer)(x)
+    x = Convolution3D(6, (9,9,9), kernel_regularizer=K.regularizers.l2(l2_lambda), kernel_initializer=initializer)(x)
     x = Dropout(dropout)(x)
     x = LeakyReLU(leakage)(x)
-    x = Convolution3D(2, (9,9,9), kernel_regularizer=K.regularizers.l2(l2_lambda), kernel_initializer=initializer)(x)
+    x = Convolution3D(6, (9,9,9), kernel_regularizer=K.regularizers.l2(l2_lambda), kernel_initializer=initializer)(x)
     x = Dropout(dropout)(x)
     x = LeakyReLU(leakage)(x)
     x = Flatten()(x)
