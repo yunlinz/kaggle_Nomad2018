@@ -18,7 +18,14 @@ def assemble(outdir):
 def diagnose_validation(outdir):
     df = None
     for dir in os.listdir(outdir):
-        new_df = pd.read_csv(outdir)
+        if os.path.isdir(outdir + '/' + dir):
+            new_df = pd.read_csv(outdir + '/' + dir + '/valid_diag.csv')
+            if df is None:
+                df = new_df
+            else:
+                df = df.append(new_df, ignore_index=True)
+
+    df.to_csv(outdir + '/valid_diag.csv')
 
 if __name__ == '__main__':
-    assemble('output/v0.8')
+    diagnose_validation('output/v0.8')

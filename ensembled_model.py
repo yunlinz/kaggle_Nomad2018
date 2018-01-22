@@ -98,8 +98,8 @@ def make_input_output(df, model, isTest=False):
 
 
 if __name__ == '__main__':
-    name = "v0.8"
-    submodels = 10
+    name = "v0.9"
+    submodels = 2
 
     outdir = 'output/' + name
     if not os.path.exists(outdir):
@@ -110,4 +110,4 @@ if __name__ == '__main__':
 
     for i in range(1, submodels):
         print('submodel: {}'.format(i))
-        make_submodel(outdir + '/' + str(i))
+        make_submodel(outdir + '/' + str(i), epochs=15)

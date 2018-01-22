@@ -19,6 +19,9 @@ class Vector(object):
     def __eq__(self, other):
         return self.dist(other) == 0
 
+    def get_unit_vec(self):
+        return (self.x / self.length(), self.y / self.length(), self.z / self.length())
+
     def dist(self, other: 'Vector'):
         return (self - other).length()
 
@@ -68,6 +71,18 @@ class Vector(object):
         new_x, new_y = new_x2, new_y2
         return Vector(new_x, new_y, new_z)
 
+    def rotate_around(self, axis, angle):
+        ux, uy, uz = axis
+        R = np.asarray([[
+            np.cos(angle) + ux**2 * (1 - np.cos(angle)), ux*uy*(1-np.cos(angle)) - uz*np.sin(angle), ux*uz*(1-np.cos(angle)) + uy*np.sin(angle)
+        ],[
+            uy*ux*(1-np.cos(angle)) + uz*np.sin(angle), np.cos(angle) + uy**2*(1-np.cos(angle)), uy*uz*(1-np.cos(angle)) - ux*np.sin(angle)
+        ],[
+            uz*ux*(1-np.cos(angle)) - uy*np.sin(angle), uz*uy*(1-np.cos(angle)) + ux*np.sin(angle), np.cos(angle) + uz**2*(1-np.cos(angle))
+        ]])
+        new_x, new_y, new_z = np.dot(R, np.asarray([self.x, self.y, self.z]))
+        return Vector(new_x, new_y, new_z)
+
     def rotate(self, angle, axis: int):
         assert(1 <= axis <= 3)
         if axis == 1:
@@ -96,17 +111,25 @@ class Vector(object):
         return str(self.to_numpy())
 
 class UnitCell(object):
-    def __init__(self, lattice1: Vector, lattice2: Vector, lattice3: Vector):
+    def __init__(self, lattice1: Vector, lattice2: Vector, lattice3: Vector, isHexagonal=False):
         self.lattice1 = lattice1
         self.lattice2 = lattice2
         self.lattice3 = lattice3
         self.atoms = {}
+        self.isHexagonal = isHexagonal
 
     def add_atom(self, atom: str, coord: Vector):
         if atom not in self.atoms:
             self.atoms[atom] = []
         if coord not in self.atoms[atom]:
             self.atoms[atom].append(coord)
+            if self.isHexagonal:
+                self.atoms[atom].append(
+                    coord.rotate_around(self.lattice3.get_unit_vec(), np.pi * 2 / 3)
+                )
+                self.atoms[atom].append(
+                    coord.rotate_around(self.lattice3.get_unit_vec(), np.pi * 4 / 3)
+                )
 
     def to_numpy(self, atom_0=None):
         atoms = []
@@ -123,6 +146,14 @@ class UnitCell(object):
                       self.lattice3.free_rotate(theta_x, theta_y, theta_z))
         for atom, coords in self.atoms.items():
             uc.atoms[atom] = list(map(lambda v: v.free_rotate(theta_x, theta_y, theta_z), coords))
+        return uc
+
+    def rotate_from(self, axis, angle):
+        uc = UnitCell(self.lattice1.rotate_around(axis, angle),
+                      self.lattice2.rotate_around(axis, angle),
+                      self.lattice3.rotate_around(axis, angle))
+        for atom, coords in self.atoms.items():
+            uc.atoms[atom] = list(map(lambda v: v.rotate_around(axis, angle), coords))
         return uc
 
     def rotate(self, angle, axis: int):
@@ -159,6 +190,8 @@ class UnitCell(object):
             return self.free_translate(0, dist, 0)
         else:
             return self.free_translate(0, 0, dist)
+
+
 
     def __str__(self):
         lattice_vecs = pd.DataFrame(np.asarray([self.lattice1.to_numpy(), self.lattice2.to_numpy(), self.lattice3.to_numpy()]), index=['lv1', 'lv2', 'lv3'], columns=['x', 'y', 'z'])
@@ -203,14 +236,11 @@ class SuperCell(object):
         return SuperCell(self.unit_cell.translate(dist, axis))
 
     def repetitions(self):
-        return (int(25.0 / self.unit_cell.lattice1.length()) + 1,
-                int(25.0 / self.unit_cell.lattice2.length()) + 1,
-                int(25.0 / self.unit_cell.lattice3.length()) + 1)
+        return (int(25.0 / self.unit_cell.lattice1.length()) + 2,
+                int(25.0 / self.unit_cell.lattice2.length()) + 2,
+                int(25.0 / self.unit_cell.lattice3.length()) + 2)
 
     def random_transform(self):
-        x_rot, y_rot, z_rot = np.random.randint(2) * math.pi, \
-                              np.random.randint(2) * math.pi, \
-                              np.random.randint(2) * math.pi
         x_max, y_max, z_max = min(self.unit_cell.lattice1.x, self.unit_cell.lattice2.x, self.unit_cell.lattice3.x),\
             min(self.unit_cell.lattice1.y, self.unit_cell.lattice2.y, self.unit_cell.lattice3.y),\
             min(self.unit_cell.lattice1.z, self.unit_cell.lattice2.z, self.unit_cell.lattice3.z),
@@ -218,21 +248,28 @@ class SuperCell(object):
         return self.free_translate(x_tran, y_tran, z_tran)
 
     def make_supercell(self, atom):
-        supercell = None
-        x,y,z = self.repetitions()
+        x, y, z = self.repetitions()
         _, primary_cell = self.unit_cell.to_numpy(atom)
+        supercell = primary_cell
         lv1 = self.unit_cell.lattice1.to_numpy()
         lv2 = self.unit_cell.lattice2.to_numpy()
         lv3 = self.unit_cell.lattice3.to_numpy()
-        for i in range(-x, x):
-            for j in range(-y, y):
-                for k in range(-z, z):
-                    subcell = primary_cell + i * lv1 + j * lv2 + k * lv3
-                    if supercell is None:
-                        supercell = subcell
-                    else:
-                        supercell = np.concatenate((supercell, subcell))
+        if True:
+            for i in range(-x, x):
+                for j in range(-y, y):
+                    for k in range(-z, z):
+                        subcell = primary_cell + i * lv1 + j * lv2 + k * lv3
+                        if supercell is None:
+                            supercell = subcell
+                        else:
+                            supercell = np.concatenate((supercell, subcell))
+        #else:
+        #    supercell = np.concatenate((supercell, primary_cell +  lv1))
         return supercell
+
+    def realign_cell(self):
+        # TODO rotate cell so that first component is in x only, first and second in xy plane only
+        pass
 
     def to_tensor2(self, cell_size=12.0, fineness=1.5):
         atom_map = {
@@ -255,7 +292,7 @@ class SuperCell(object):
             for c in coord:
                 x, y, z = c
                 if np.abs(x) <= int(n/2) and np.abs(y) <= int(n/2) and np.abs(z) <=int(n/2):
-                    out_tensor[x, y, z, atom_map[k]] += 1.0
+                    out_tensor[x, y, z, atom_map[k]] = 1.0
 
         return out_tensor
 
@@ -301,35 +338,27 @@ class SuperCell(object):
 
 
 
-def read_file(filename):
+def read_file(filename, isHexagonal=False):
     with open(filename) as inputfile:
         lines = list(filter(lambda s: '#' not in s, inputfile.readlines()))
     lattice_vecs = lines[:3]
     atoms = lines[3:]
     x, y, z = list(map(lambda m: Vector(float(m[1]), float(m[2]), float(m[3])),
                          list(map(lambda l: l.split(' '), lattice_vecs))))
-    unit_cell = UnitCell(x, y, z)
+    unit_cell = UnitCell(x, y, z, isHexagonal)
     for atom in atoms:
         _, x, y, z, a = atom.split(' ')
         unit_cell.add_atom(a.strip(), Vector(float(x), float(y), float(z)))
     return unit_cell
 
-def super_cell(filename):
-    return SuperCell(read_file(filename))
+def super_cell(filename, isHexagonal=False):
+    return SuperCell(read_file(filename, isHexagonal=isHexagonal))
 
 if __name__ == '__main__':
-    cell = read_file('train/1/geometry.xyz')
-    supercell = SuperCell(cell)
-    import time
-    start = time.time()
-    ten = supercell.to_tensor2(fineness=1.5)
-    dur = time.time() - start
-    print(dur)
-    print(np.sum(ten))
-    print(np.max(ten))
-    print(ten.shape)
-    import matplotlib.pyplot as plt
-    plt.imshow(ten[:,:,0,1])
-    plt.show()
-    print(ten[:,:,0,1])
-
+    uc = read_file('train/2/geometry.xyz', isHexagonal=True)
+    sc = SuperCell(uc)
+    y = sc.make_supercell('Al')
+    y = np.concatenate((y, sc.make_supercell('Ga')))
+    y = np.concatenate((y, sc.make_supercell('O')))
+    df = pd.DataFrame(y, columns=['x','y','z'])
+    df.to_csv('hexagon.csv')
