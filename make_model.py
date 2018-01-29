@@ -1,7 +1,10 @@
 import keras as K
 import numpy as np
 from keras.models import Sequential, Model
-from keras.layers import Convolution3D, Flatten, MaxPooling3D, Dense, Input, concatenate, LeakyReLU, Dropout
+import keras.layers as layers
+from keras.layers import Convolution3D, Flatten, MaxPooling3D, Dense, Input, concatenate, LeakyReLU, Dropout, add, Activation
+from keras.regularizers import l2
+from keras.activations import tanh
 from keras.callbacks import ModelCheckpoint
 from keras.initializers import RandomUniform, TruncatedNormal
 
@@ -9,26 +12,63 @@ from keras.optimizers import Nadam
 import tensorflow as tf
 import os
 
+def create_graph2(cell_size=27, load_file=None, l2_lambda=0.0, leakage=0.0, dropout=0.3, test=True, channels=(4,8,12,16)):
+    print('Running with: {0}x{0}x{0}x4, lambda={1}, leakage={2}, dropout={3}'
+      .format(cell_size, l2_lambda, leakage, dropout))
 
-def create_graph2(cell_size=27, load_file=None, l2_lambda=0.0, leakage=0.01, dropout=0.3):
+    activation = LeakyReLU(leakage)
+    #activation = Activation('tanh')
+    def residual_block(y, nb_channels, _strides=(1, 1, 1), _project_shortcut=False):
+        shortcut = y
+
+        # down-sampling is performed with a stride of 2
+        y = layers.Conv3D(nb_channels, kernel_size=(3, 3, 3), strides=_strides, padding='same', kernel_regularizer=l2(l2_lambda))(y)
+        y = layers.BatchNormalization()(y)
+        y = layers.LeakyReLU(leakage)(y)
+
+        y = layers.Conv3D(nb_channels, kernel_size=(3, 3, 3), strides=(1, 1, 1), padding='same', kernel_regularizer=l2(l2_lambda))(y)
+        y = layers.BatchNormalization()(y)
+
+        # identity shortcuts used directly when the input and output are of the same dimensions
+        if _project_shortcut or _strides != (1, 1, 1):
+            # when the dimensions increase projection shortcut is used to match dimensions (done by 1×1 convolutions)
+            # when the shortcuts go across feature maps of two sizes, they are performed with a stride of 2
+            shortcut = layers.Conv3D(nb_channels, kernel_size=(1, 1, 1), strides=_strides, padding='same')(shortcut)
+            shortcut = layers.BatchNormalization()(shortcut)
+
+        y = layers.add([shortcut, y])
+        y = activation(y)
+
+        return y
     initializer = TruncatedNormal(0, 0.01)
     cell_input = Input((cell_size, cell_size, cell_size, 4), dtype='float32', name='crystall_cell')
-    x = Convolution3D(6, (9,9,9), input_shape=(cell_size,cell_size,cell_size, 4),
-                      activation='relu', kernel_regularizer=K.regularizers.l2(l2_lambda))(cell_input)
-    x = LeakyReLU(leakage)(x)
-    x = Convolution3D(6, (9,9,9), kernel_regularizer=K.regularizers.l2(l2_lambda), kernel_initializer=initializer)(x)
-    x = Dropout(dropout)(x)
-    x = LeakyReLU(leakage)(x)
-    x = Convolution3D(6, (9,9,9), kernel_regularizer=K.regularizers.l2(l2_lambda), kernel_initializer=initializer)(x)
-    x = Dropout(dropout)(x)
-    x = LeakyReLU(leakage)(x)
+    #x = Convolution3D(4, (7,7,7), input_shape=(cell_size,cell_size,cell_size, 4),
+    #                  activation='relu', kernel_regularizer=K.regularizers.l2(l2_lambda))(cell_input)
+    #x = activation(x)
+    #x = Convolution3D(4, (7,7,7), kernel_regularizer=K.regularizers.l2(l2_lambda), kernel_initializer=initializer)(x)
+    #x = Dropout(dropout)(x)
+    #x = activation(x)
+    #x = Convolution3D(4, (7,7,7), kernel_regularizer=K.regularizers.l2(l2_lambda), kernel_initializer=initializer)(x)
+    #x = Dropout(dropout)(x)
+    #x = activation(x)
+    #x = Convolution3D(4, (7,7,7), kernel_regularizer=K.regularizers.l2(l2_lambda), kernel_initializer=initializer)(x)
+    #x = Dropout(dropout)(x)
+    #x = activation(x)
+    a,b,c,d = channels
+    x = residual_block(cell_input, a, (2, 2, 2), False)
+    x = residual_block(x, b, (2, 2, 2), False)
+    x = residual_block(x, c, (2, 2, 2), False)
+    x = residual_block(x, d, (2, 2, 2), False)
     x = Flatten()(x)
-    aux_input = Input((16,), name='aux_input')
-    x = concatenate([x, aux_input])
+    #aux_input = Input((16,), name='aux_input')
+    #x = concatenate([x, aux_input])
     x = Dropout(dropout)(x)
     output = Dense(2, activation='relu', kernel_regularizer=K.regularizers.l2(l2_lambda), kernel_initializer=initializer)(x)
-    model = Model(inputs=[cell_input, aux_input], outputs=[output])
-
+    #model = Model(inputs=[cell_input, aux_input], outputs=[output])
+    model = Model(inputs=[cell_input], outputs=[output])
+    
+    if test:  
+        exit()
     if load_file is not None:
         model.load_weights(load_file)
 
@@ -53,6 +93,9 @@ def create_graph(cell_size=27, load_file=None, l2_lambda=0.01):
     model.add(Dense(64, activation='relu', kernel_regularizer=K.regularizers.l2(l2_lambda)))
     model.add(Dense(32, activation='relu', kernel_regularizer=K.regularizers.l2(l2_lambda)))
     model.add(Dense(2, activation='relu', kernel_regularizer=K.regularizers.l2(l2_lambda)))
+
+    print(model.summary())
+    exit()
 
     if load_file is not None:
         model.load_weights(load_file)

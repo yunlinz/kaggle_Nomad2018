@@ -8,11 +8,23 @@ import pickle
 from make_model import *
 
 
-def make_submodel(outdir, test_data=None, epochs=25, dropout=0.3, continue_from=None):
+def make_submodel(outdir, test_data=None, epochs=25, dropout=0.3, 
+    continue_from=None, test=False, spacegroup=None,
+    checkpoints=None):
     if not os.path.exists(outdir):
         os.mkdir(outdir)
 
     train_csv = pd.read_csv('train.csv')
+    channels = (4, 8, 16, 24)
+    if spacegroup == 194:
+        train_csv = train_csv[train_csv['spacegroup'] == spacegroup]
+        channels = (4, 4, 2, 2)
+    elif spacegroup == 227:
+        train_csv = train_csv[(train_csv['spacegroup'] == spacegroup) & (train_csv['lattice_angle_gamma_degree'] < 100)]
+        channels = (4, 4, 2, 2)
+    else:
+        train_csv = train_csv[(train_csv['spacegroup'] != 227) & (train_csv['spacegroup'] != 194)]
+
     sample = train_csv.sample(frac=1.0).copy()
     n_sample = len(sample)
     n_train = int(0.75 * n_sample)
@@ -27,21 +39,24 @@ def make_submodel(outdir, test_data=None, epochs=25, dropout=0.3, continue_from=
 
     joblib.dump(ohe, outdir + '/ohe.pkl')
     if continue_from is None:
-        model = create_graph2(27, None, 0.0, 0.01, dropout)
+        model = create_graph2(27, None, dropout=dropout, test=False, channels=channels, leakage=0.0, l2_lambda=0.0)
     else:
-        model = create_graph2(27, continue_from, 0.0, 0.01, dropout)
-    model.fit([inp, aux], train_target,
-              validation_data=([valid_inp, valid_aux], valid_target),
-              batch_size=64, shuffle=True, epochs=epochs)
+        model = create_graph2(27, continue_from, dropout=dropout, test=False, channels=channels, leakage=0.0, l2_lambda=0.0)
+    model.fit(inp, train_target,
+              validation_data=(valid_inp, valid_target),
+              batch_size=64, shuffle=True, epochs=epochs, callbacks=checkpoints, verbose=0)
 
     model.save(outdir + '/model_weights.h5')
 
     def save_diagnostics(inpdata, auxdata, tardata, dfdata, name):
-        y = model.predict([inpdata, auxdata])
+        y = model.predict(inpdata)
         res = pd.DataFrame(y, columns=['fe_model', 'bg_model'])
+        orig_size = len(dfdata)
+        aug_size, _ = y.shape
+        repeats = int(aug_size / orig_size)
         res['fe_actual'] = tardata[:, 0]
         res['bg_actual'] = tardata[:, 1]
-        res['id'] = np.repeat(dfdata['id'].values, 11, axis=0)
+        res['id'] = np.repeat(dfdata['id'].values, repeats , axis=0)
         res.to_csv(name + '.csv', index=False)
         res.groupby('id').mean().to_csv(name + 'means.csv', index=False)
 
@@ -49,16 +64,25 @@ def make_submodel(outdir, test_data=None, epochs=25, dropout=0.3, continue_from=
     save_diagnostics(valid_inp, valid_aux, valid_target, df_valid, outdir + '/valid_diag')
 
     df_test = pd.read_csv('test.csv')
+
+    if spacegroup is not None:
+        df_test = df_test[df_test['spacegroup'] == spacegroup]
+    else:
+        df_test = df_test[(df_test['spacegroup'] != 194) & (df_test['spacegroup'] != 227)]
+
     inp, aux = None, None
     if test_data is not None:
         inp, aux = test_data
     else:
         inp, aux, _, _ = make_test_intput(df_test, ohe)
 
-    y_test = model.predict([inp, aux])
+    y_test = model.predict(inp)
+    aug_size, _ = y_test.shape
     out_df = pd.DataFrame(df_test['id'], columns=['id'])
-    out_df['formation_energy_ev_natom'] = np.mean(y_test[:, 0].reshape(-1, 11), axis=1)
-    out_df['bandgap_energy_ev'] = np.mean(y_test[:, 1].reshape(-1, 11), axis=1)
+    orig_size = len(out_df)
+    repeats = int(aug_size / orig_size)
+    out_df['formation_energy_ev_natom'] = np.mean(y_test[:, 0].reshape(-1, repeats), axis=1)
+    out_df['bandgap_energy_ev'] = np.mean(y_test[:, 1].reshape(-1, repeats), axis=1)
     out_df.to_csv(outdir + '/submission.csv', index=False)
 
 
@@ -72,7 +96,10 @@ def make_input_output(df, model, isTest=False):
         model.fit(df['spacegroup'].values.reshape((-1,1)))
     ids = df['id'].values
     n_data = len(df)
+
+    repeats = None
     aux_tensor = np.zeros((n_data, 16))
+    """
     aux_tensor[:,:6] = model.transform(df['spacegroup'].values.reshape((-1,1))).todense()
     aux_tensor[:,6] = df['number_of_total_atoms'].values / 80.0
     aux_tensor[:,7:13] = df[['percent_atom_al',
@@ -84,14 +111,20 @@ def make_input_output(df, model, isTest=False):
     aux_tensor[:,13:] = df[['lattice_angle_alpha_degree',
                             'lattice_angle_beta_degree',
                             'lattice_angle_gamma_degree']].values - 90
+    """
     aux_tensor = np.repeat(aux_tensor, 11, axis=0)
-
-    inp_tensor = np.zeros((n_data * 11, 27, 27, 27, 4))
-    for i, id in enumerate(ids):
-        inp_tensor[i*11:(i+1)*11,:] = np.load('{}/{}/tensor_aug2.npy'.format('test' if isTest else 'train', id))
+    
+    inp_tensor = None
+    for i, cellid in enumerate(ids):
+        tensor = np.load('{}/{}/tensor_aug2.npy'.format('test' if isTest else 'train', cellid))
+        k, _, _, _, _ = tensor.shape
+        if repeats is None:
+            repeats = k
+            inp_tensor = np.zeros((n_data * repeats, 27, 27, 27, 4))
+        inp_tensor[i*k:(i+1)*k,:] = tensor 
 
     if not isTest:
-        target_tensor = np.repeat(df[['formation_energy_ev_natom', 'bandgap_energy_ev']].values, 11, axis=0)
+        target_tensor = np.repeat(df[['formation_energy_ev_natom', 'bandgap_energy_ev']].values, repeats, axis=0)
     else:
         target_tensor = None
 
@@ -101,9 +134,14 @@ def make_input_output(df, model, isTest=False):
 
 
 if __name__ == '__main__':
-    """
+    import sys
+    if len(sys.argv) > 1:
+        test = bool(sys.argv[1])
+    else:
+        test = False
+
     name = "v0.9"
-    submodels = 10
+    submodels = 6
 
     outdir = 'output/' + name
     if not os.path.exists(outdir):
@@ -113,8 +151,11 @@ if __name__ == '__main__':
             os.mkdir(outdir + '/{}'.format(str(i)))
 
     for i in range(1, submodels + 1):
+        filepath = outdir + '/{}'.format(i) + '/model_weights_{epoch:03d}.h5'
+        checkpoint = ModelCheckpoint(filepath, 'val_loss', verbose=1, save_best_only=True)
+        # model = train(callbacks=[chechpoint], version=version, epochs=10)
+
         print('submodel: {}'.format(i))
-        dropout = 0.0
-        make_submodel(outdir + '/' + str(i), dropout=dropout)
-    """
-    make_submodel(outdir='output/0.9ct/9', continue_from='output/v0.9/9/model_weights.h5')
+        dropout = 0.05 * i + 0.3
+        
+        make_submodel(outdir + '/' + str(i), dropout=dropout, spacegroup=None, epochs=25, checkpoints=[checkpoint])

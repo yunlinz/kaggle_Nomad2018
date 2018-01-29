@@ -25,6 +25,17 @@ class Vector(object):
     def dist(self, other: 'Vector'):
         return (self - other).length()
 
+    def dot(self, other: 'Vector'):
+        return self.x * other.x  + self.y * other.y + self.z * other.z
+
+    def cross(self, other: 'Vector'):
+        return Vector(self.y * other.z - self.z * other.y,
+                      self.z * other.x - self.x * other.z,
+                      self.x * other.y - self.y * other.x)
+
+    def angle(self, other: 'Vector'):
+        return np.arccos(self.dot(other) / (self.length() * other.length()))
+
     def length(self):
         import math
         return math.sqrt(self.x**2 + self.y**2 + self.z**2)
@@ -117,6 +128,30 @@ class UnitCell(object):
         self.lattice3 = lattice3
         self.atoms = {}
         self.isHexagonal = isHexagonal
+
+    def realign(self):
+        """
+        two stage rotation to make first axis align with x axis, and second axis to be in xy plane
+        1. align cross(lv1, lav2) to z-axis
+        2. align lv1 to x-axis
+        """
+        def realign_z(uc: 'UnitCell'):
+            vec3 = uc.lattice1.cross(uc.lattice2)
+            angle = vec3.angle(Vector(0,0,1))
+            axis = vec3.cross(Vector(0,0,1))
+            return uc.rotate_from(axis.get_unit_vec(), angle)
+        def realign_x(uc: 'UnitCell'):
+            axis = uc.lattice1.cross(Vector(1,0,0))
+            angle = uc.lattice1.angle(Vector(1,0,0))
+            return uc.rotate_from(axis.get_unit_vec(), angle)
+        return realign_x(realign_z(self))
+
+    def  show_lvs(self):
+        df = lattice_vecs = pd.DataFrame(np.asarray([self.lattice1.to_numpy(), 
+            self.lattice2.to_numpy(), 
+            self.lattice3.to_numpy()]), index=['lv1', 'lv2', 'lv3'], columns=['x', 'y', 'z'])
+        print(df)
+
 
     def add_atom(self, atom: str, coord: Vector):
         if atom not in self.atoms:
@@ -349,16 +384,19 @@ def read_file(filename, isHexagonal=False):
     for atom in atoms:
         _, x, y, z, a = atom.split(' ')
         unit_cell.add_atom(a.strip(), Vector(float(x), float(y), float(z)))
-    return unit_cell
+    return unit_cell.realign()
 
 def super_cell(filename, isHexagonal=False):
     return SuperCell(read_file(filename, isHexagonal=isHexagonal))
 
 if __name__ == '__main__':
-    uc = read_file('train/2/geometry.xyz', isHexagonal=True)
-    sc = SuperCell(uc)
-    y = sc.make_supercell('Al')
-    y = np.concatenate((y, sc.make_supercell('Ga')))
-    y = np.concatenate((y, sc.make_supercell('O')))
-    df = pd.DataFrame(y, columns=['x','y','z'])
-    df.to_csv('hexagon.csv')
+    import sys
+    uc = read_file('train/{}/geometry.xyz'.format(sys.argv[1]), isHexagonal=True)
+    uc.show_lvs()
+    uc.realign().show_lvs()
+    #sc = SuperCell(uc)
+    #y = sc.make_supercell('Al')
+    #y = np.concatenate((y, sc.make_supercell('Ga')))
+    #y = np.concatenate((y, sc.make_supercell('O')))
+    #df = pd.DataFrame(y, columns=['x','y','z'])
+    #df.to_csv('hexagon.csv')
