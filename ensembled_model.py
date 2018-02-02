@@ -10,7 +10,7 @@ from make_model import *
 
 def make_submodel(outdir, test_data=None, epochs=25, dropout=0.3, 
     continue_from=None, test=False, spacegroup=None,
-    checkpoints=None):
+    checkpoints=None, angle_func=None):
     if not os.path.exists(outdir):
         os.mkdir(outdir)
 
@@ -18,10 +18,11 @@ def make_submodel(outdir, test_data=None, epochs=25, dropout=0.3,
     channels = (4, 8, 16, 24)
     if spacegroup == 194:
         train_csv = train_csv[train_csv['spacegroup'] == spacegroup]
-        channels = (4, 4, 2, 2)
+        channels = (4, 8, 16, 24)
     elif spacegroup == 227:
-        train_csv = train_csv[(train_csv['spacegroup'] == spacegroup) & (train_csv['lattice_angle_gamma_degree'] < 100)]
-        channels = (4, 4, 2, 2)
+        train_csv = train_csv[(train_csv['spacegroup'] == spacegroup) & 
+                              (train_csv['lattice_angle_gamma_degree'].apply(angle_func))]
+        channels = (4, 8, 16, 24)
     else:
         train_csv = train_csv[(train_csv['spacegroup'] != 227) & (train_csv['spacegroup'] != 194)]
 
@@ -44,7 +45,7 @@ def make_submodel(outdir, test_data=None, epochs=25, dropout=0.3,
         model = create_graph2(27, continue_from, dropout=dropout, test=False, channels=channels, leakage=0.0, l2_lambda=0.0)
     model.fit(inp, train_target,
               validation_data=(valid_inp, valid_target),
-              batch_size=64, shuffle=True, epochs=epochs, callbacks=checkpoints, verbose=0)
+              batch_size=64, shuffle=True, epochs=epochs, callbacks=checkpoints, verbose=1)
 
     model.save(outdir + '/model_weights.h5')
 
@@ -140,22 +141,35 @@ if __name__ == '__main__':
     else:
         test = False
 
-    name = "v0.9"
-    submodels = 6
+    sg_dict = {
+        '0.9-hex': 194,
+        '0.9-smallang': 227,
+        '0.9-bigang': 227
+    }
 
-    outdir = 'output/' + name
-    if not os.path.exists(outdir):
-        os.mkdir(outdir)
-    for i in range(submodels):
-        if not os.path.exists(outdir + '/{}'.format(str(i))):
-            os.mkdir(outdir + '/{}'.format(str(i)))
+    ang_dict = {
+        '0.9-hex': None,
+        '0.9-smallang': lambda x: x < 100,
+        '0.9-bigang': lambda x: x > 100
+    }
 
-    for i in range(1, submodels + 1):
-        filepath = outdir + '/{}'.format(i) + '/model_weights_{epoch:03d}.h5'
-        checkpoint = ModelCheckpoint(filepath, 'val_loss', verbose=1, save_best_only=True)
-        # model = train(callbacks=[chechpoint], version=version, epochs=10)
+    for name in [ '0.9-bigang', '0.9-hex', '0.9-smallang']:
+        submodels = 8
 
-        print('submodel: {}'.format(i))
-        dropout = 0.05 * i + 0.3
-        
-        make_submodel(outdir + '/' + str(i), dropout=dropout, spacegroup=None, epochs=25, checkpoints=[checkpoint])
+        outdir = 'output/' + name
+        if not os.path.exists(outdir):
+            os.mkdir(outdir)
+        for i in range(submodels):
+            if not os.path.exists(outdir + '/{}'.format(str(i))):
+                os.mkdir(outdir + '/{}'.format(str(i)))
+
+        for i in range(1, submodels + 1):
+            filepath = outdir + '/{}'.format(i) + '/model_weights_{epoch:03d}.h5'
+            checkpoint = ModelCheckpoint(filepath, 'val_loss', verbose=1, save_best_only=True)
+            # model = train(callbacks=[chechpoint], version=version, epochs=10)
+
+            print('submodel: {}'.format(i))
+            dropout = 0.05 * i + 0.45
+            
+            make_submodel(outdir + '/' + str(i), dropout=dropout, spacegroup=sg_dict[name], 
+                          epochs=25, checkpoints=[checkpoint], angle_func=ang_dict[name])
